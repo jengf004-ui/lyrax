@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "verification",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "identifier",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
