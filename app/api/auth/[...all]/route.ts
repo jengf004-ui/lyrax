@@ -1,10 +1,10 @@
-// @ts-expect-error - auth module has implicit 'any' type
-export const runtime = 'edge';
+// @ts-expect-error - auth module has implicit 'any' type   
 import { auth } from "@/lib/auth";
+
 import { toNextJsHandler } from "better-auth/next-js";
 import { NextRequest, NextResponse } from "next/server";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// eslint -disable-next-line @typescript-eslint/no-explicit-any
 let handler: Record<string, any>;
 
 try {
@@ -55,3 +55,4 @@ const GET = handler.GET
   : undefined;
 
 export { POST, GET };
+export const runtime = 'nodejs';
