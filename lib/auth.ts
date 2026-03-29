@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
+import { createAuthMiddleware, APIError } from "better-auth/api";
 import { firestoreAdapter } from "better-auth-firestore";
 import { db } from "./firebase";
+import { validateEmail } from "./email-validation";
 
 let auth;
 try {
@@ -48,6 +50,37 @@ try {
 
     user: {
       additionalFields: {},
+    },
+
+    account: {
+      storeStateStrategy: "cookie",
+      accountLinking: {
+        enabled: true,
+        trustedProviders: ["google"],
+      },
+    },
+
+    trustedOrigins: [baseURL],
+
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        // Block sign-up with fake/disposable emails (server-side enforcement)
+        if (ctx.path === "/sign-up/email") {
+          const email = ctx.body?.email;
+          if (!email) {
+            throw new APIError("BAD_REQUEST", {
+              message: "Email address is required",
+            });
+          }
+
+          const validation = validateEmail(email);
+          if (!validation.isValid) {
+            throw new APIError("BAD_REQUEST", {
+              message: validation.error || "Invalid email address",
+            });
+          }
+        }
+      }),
     },
 
     advanced: {
