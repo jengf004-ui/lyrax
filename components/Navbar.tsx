@@ -1,14 +1,22 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession, signOut } from "@/lib/auth-client";
 import { ThemeToggle } from "./ThemeToggle";
-import { LogOut } from "lucide-react";
+import { LogOut, Zap } from "lucide-react";
 
 export function Navbar() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
+
+  // ★ Client-side safety net: redirect unverified users to verify-email
+  useEffect(() => {
+    if (!isPending && session?.user && !session.user.emailVerified) {
+      router.push("/auth/verify-email");
+    }
+  }, [session, isPending, router]);
 
   const handleSignOut = async () => {
     await signOut({
@@ -26,9 +34,11 @@ export function Navbar() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
           <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
-            <span className="text-sm font-bold text-primary-foreground">J</span>
+            <span className="text-sm font-bold text-primary-foreground">
+              <Zap className="size-6 text-primary-foreground" />
+            </span>
           </div>
-          <span className="text-lg font-semibold tracking-tight">Jeng</span>
+          {/* <span className="text-lg font-semibold tracking-tight">Jeng</span> */}
         </Link>
 
         {/* Navigation Links and User Menu */}

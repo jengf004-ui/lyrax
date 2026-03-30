@@ -1,5 +1,6 @@
 import { Navbar } from "@/components/Navbar";
-import { Zap, Shield, Layers, ArrowRight } from "lucide-react";
+import { HeroButtons } from "@/components/HeroButtons";
+import { Zap, Shield, Layers } from "lucide-react";
 
 const features = [
   {
@@ -59,25 +60,7 @@ export default function Home() {
             OKLCH color tokens, and premium aesthetics.
           </p>
 
-          <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <a
-              href="https://nextjs.org/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/25 transition-all hover:shadow-xl hover:shadow-primary/30 hover:brightness-110"
-            >
-              Get Started
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </a>
-            <a
-              href="https://github.com/vercel/next.js"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-12 items-center gap-2 rounded-xl border border-border bg-background px-6 text-sm font-semibold transition-colors hover:bg-accent"
-            >
-              View on GitHub
-            </a>
-          </div>
+          <HeroButtons />
         </div>
       </section>
 
@@ -130,30 +113,30 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Footer ── */}
-      <footer className="border-t border-border/60">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-8">
-          <p className="text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} Jeng. Built with Next.js&nbsp;15.
-          </p>
-          <div className="flex gap-6">
-            <a
-              href="https://nextjs.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Next.js
-            </a>
-            <a
-              href="https://tailwindcss.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Tailwind
-            </a>
+      {/* --- Footer --- */}
+      <footer className="border-t border-white/5 py-8">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6">
+          
+          {/* 1. ฝั่งซ้าย: Copyright */}
+          <div className="flex-1 text-sm text-muted-foreground">
+            &copy; {new Date().getFullYear()} . Built with Next.js&nbsp;15.
           </div>
+
+          {/* 2. ตรงกลาง: Facebook + ชื่อเพื่อน */}
+          <div className="flex flex-1 items-center justify-center gap-4">
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12c0 4.84 3.44 8.87 8 9.8V15H8v-3h2V9.5C10 7.57 11.57 6 13.5 6H16v3h-2c-.55 0-1 .45-1 1v2h3v3h-3v6.95c5.05-.5 9-4.76 9-9.95z"/>
+              </svg>
+            <a href="https://www.facebook.com/guay.jeng.908484/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">GuayJeng</a>
+            <a href="https://www.facebook.com/binly.xayxhalern.1" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Thepmoukda</a>
+          </div>
+
+          {/* 3. ฝั่งขวา: ลิงก์เทคโนโลยี */}
+          <div className="flex flex-1 items-center justify-end gap-6">
+            <a href="https://nextjs.org" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Next.js</a>
+            <a href="https://tailwindcss.com" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Tailwind</a>
+          </div>
+
         </div>
       </footer>
     </div>

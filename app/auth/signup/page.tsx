@@ -59,6 +59,7 @@ export default function SignUpPage() {
         email,
         password,
         name,
+        callbackURL: "/auth/signin?verified=true",
       });
 
       if (response.error) {
@@ -66,7 +67,7 @@ export default function SignUpPage() {
           response.error.message || "Failed to sign up. Please try again."
         );
       } else {
-        router.push("/");
+        router.push("/auth/verify-email");
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to sign up. Please try again.");
@@ -82,10 +83,10 @@ export default function SignUpPage() {
           <Link href="/" className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
               <span className="text-sm font-bold text-primary-foreground">
-                J
+                <Zap className="size-6 text-primary-foreground" />
               </span>
             </div>
-            <span className="text-lg font-semibold tracking-tight">Jeng</span>
+            {/* <span className="text-lg font-semibold tracking-tight">Jeng</span> */}
           </Link>
         </div>
       </nav>

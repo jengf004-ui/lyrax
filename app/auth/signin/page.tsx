@@ -1,20 +1,108 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "@/lib/auth-client";
 import { validateEmail } from "@/lib/email-validation";
-import { Zap, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { Zap, Eye, EyeOff, AlertCircle, ShieldAlert, Lock, CheckCircle } from "lucide-react";
 
+// ─── Brute-force protection constants ───────────────────────
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_DURATION_SEC = 60; // 1 minute lockout
+const STORAGE_KEY = "signin_attempts";
+
+interface AttemptData {
+  count: number;
+  lockedUntil: number | null; // timestamp
+}
+
+function getAttemptData(): AttemptData {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { count: 0, lockedUntil: null };
+}
+
+function setAttemptData(data: AttemptData) {
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function clearAttemptData() {
+  sessionStorage.removeItem(STORAGE_KEY);
+}
+
+// ─── Component ──────────────────────────────────────────────
 export default function SignInPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isVerified = searchParams.get("verified") === "true";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Brute-force state
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+  const isLockedOut = lockoutRemaining > 0;
+
+  // Load attempt data on mount
+  useEffect(() => {
+    const data = getAttemptData();
+    setFailedAttempts(data.count);
+
+    if (data.lockedUntil && data.lockedUntil > Date.now()) {
+      setLockoutRemaining(Math.ceil((data.lockedUntil - Date.now()) / 1000));
+    }
+  }, []);
+
+  // Countdown timer
+  useEffect(() => {
+    if (lockoutRemaining <= 0) return;
+
+    const timer = setInterval(() => {
+      setLockoutRemaining((prev) => {
+        if (prev <= 1) {
+          // Lockout expired → reset
+          clearAttemptData();
+          setFailedAttempts(0);
+          setError("");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [lockoutRemaining]);
+
+  // Record a failed attempt
+  const recordFailedAttempt = useCallback(() => {
+    const data = getAttemptData();
+    const newCount = data.count + 1;
+
+    if (newCount >= MAX_ATTEMPTS) {
+      // Lock the user out
+      const lockedUntil = Date.now() + LOCKOUT_DURATION_SEC * 1000;
+      setAttemptData({ count: newCount, lockedUntil });
+      setLockoutRemaining(LOCKOUT_DURATION_SEC);
+      setFailedAttempts(newCount);
+    } else {
+      setAttemptData({ count: newCount, lockedUntil: null });
+      setFailedAttempts(newCount);
+    }
+  }, []);
+
+  // Clear attempts on success
+  const clearAttempts = useCallback(() => {
+    clearAttemptData();
+    setFailedAttempts(0);
+    setLockoutRemaining(0);
+  }, []);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -31,7 +119,6 @@ export default function SignInPage() {
     const newEmail = e.target.value;
     setEmail(newEmail);
 
-    // Real-time email validation
     if (newEmail) {
       const validation = validateEmail(newEmail);
       setEmailError(validation.error || "");
@@ -44,7 +131,10 @@ export default function SignInPage() {
     e.preventDefault();
     setError("");
 
-    // Validate email before submission
+    // Block if locked out
+    if (isLockedOut) return;
+
+    // Validate email
     const emailValidation = validateEmail(email);
     if (!emailValidation.isValid) {
       setEmailError(emailValidation.error || "Invalid email address");
@@ -54,26 +144,50 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      const response = await signIn.email({
-        email,
-        password,
-      });
+      const response = await signIn.email({ email, password });
 
       if (response.error) {
-        setError(
-          response.error.message ||
-            "Failed to sign in. Please check your credentials."
-        );
+        recordFailedAttempt();
+
+        const remaining = MAX_ATTEMPTS - (failedAttempts + 1);
+
+        if (remaining <= 0) {
+          setError(
+            `Too many failed attempts. Your account has been temporarily locked for ${LOCKOUT_DURATION_SEC} seconds.`
+          );
+        } else {
+          setError(
+            `Incorrect email or password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before temporary lockout.`
+          );
+        }
       } else {
-        router.push("/");
+        clearAttempts();
+
+        // Check if email is verified before redirecting
+        const sessionRes = await fetch("/api/auth/get-session");
+        const sessionData = await sessionRes.json().catch(() => null);
+
+        if (sessionData?.user && !sessionData.user.emailVerified) {
+          router.push("/auth/verify-email");
+        } else {
+          router.push("/account");
+        }
       }
     } catch (err: unknown) {
+      recordFailedAttempt();
       setError(
-        err instanceof Error ? err.message : "Failed to sign in. Please check your credentials."
+        err instanceof Error ? err.message : "Failed to sign in. Please try again."
       );
     } finally {
       setLoading(false);
     }
+  };
+
+  // Format seconds to MM:SS
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   return (
@@ -83,10 +197,9 @@ export default function SignInPage() {
           <Link href="/" className="flex items-center gap-2">
             <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
               <span className="text-sm font-bold text-primary-foreground">
-                J
+                <Zap className="size-6 text-primary-foreground" />
               </span>
             </div>
-            <span className="text-lg font-semibold tracking-tight">Jeng</span>
           </Link>
         </div>
       </nav>
@@ -103,6 +216,43 @@ export default function SignInPage() {
             </p>
           </div>
 
+          {/* ── Email Verified Success Banner ── */}
+          {isVerified && (
+            <div className="mb-6 rounded-xl border border-green-500/30 bg-green-500/5 p-5 text-center animate-fade-in">
+              <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-green-500/10">
+                <CheckCircle className="size-6 text-green-500" />
+              </div>
+              <h3 className="font-semibold text-green-600 dark:text-green-400">
+                Email Verified Successfully!
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Please sign in to continue to your account.
+              </p>
+            </div>
+          )}
+
+          {/* ── Lockout Banner ── */}
+          {isLockedOut && (
+            <div className="mb-6 rounded-xl border border-destructive/30 bg-destructive/5 p-5 text-center animate-fade-in">
+              <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-destructive/10">
+                <Lock className="size-6 text-destructive" />
+              </div>
+              <h3 className="font-semibold text-destructive">
+                Account Temporarily Locked
+              </h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Too many failed sign-in attempts.
+              </p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-lg bg-destructive/10 px-4 py-2 font-mono text-lg font-bold text-destructive">
+                <ShieldAlert className="size-5" />
+                {formatTime(lockoutRemaining)}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Please try again after the timer expires.
+              </p>
+            </div>
+          )}
+
           <form onSubmit={handleSignIn} className="space-y-4">
             {/* Email Field */}
             <div>
@@ -117,11 +267,11 @@ export default function SignInPage() {
                   value={email}
                   onChange={handleEmailChange}
                   required
-                  className={`w-full rounded-lg border bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-colors ${
-                    emailError
-                      ? "border-destructive focus:border-destructive focus:ring-destructive/20"
-                      : "border-input focus:border-primary focus:ring-primary/20"
-                  }`}
+                  disabled={isLockedOut}
+                  className={`w-full rounded-lg border bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${emailError
+                    ? "border-destructive focus:border-destructive focus:ring-destructive/20"
+                    : "border-input focus:border-primary focus:ring-primary/20"
+                    }`}
                 />
                 {emailError && (
                   <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 size-5 text-destructive" />
@@ -156,7 +306,8 @@ export default function SignInPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full rounded-lg border border-input bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  disabled={isLockedOut}
+                  className="w-full rounded-lg border border-input bg-background px-4 py-2 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <button
                   type="button"
@@ -172,20 +323,51 @@ export default function SignInPage() {
               </div>
             </div>
 
-            {/* Error Message */}
+            {/* Error / Warning Message */}
             {error && (
-              <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {error}
+              <div
+                className={`rounded-lg border px-4 py-3 text-sm flex items-start gap-2 ${isLockedOut
+                  ? "border-destructive/50 bg-destructive/10 text-destructive"
+                  : "border-destructive/50 bg-destructive/10 text-destructive"
+                  }`}
+              >
+                <ShieldAlert className="size-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {/* Attempt indicator (visible after first failure) */}
+            {failedAttempts > 0 && !isLockedOut && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex gap-1">
+                  {Array.from({ length: MAX_ATTEMPTS }).map((_, i) => (
+                    <div
+                      key={i}
+                      className={`h-1.5 w-5 rounded-full transition-colors ${i < failedAttempts
+                        ? "bg-destructive"
+                        : "bg-border"
+                        }`}
+                    />
+                  ))}
+                </div>
+                <span>
+                  {MAX_ATTEMPTS - failedAttempts} attempt
+                  {MAX_ATTEMPTS - failedAttempts === 1 ? "" : "s"} left
+                </span>
               </div>
             )}
 
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading || !!emailError}
+              disabled={loading || !!emailError || isLockedOut}
               className="w-full rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? "Signing In..." : "Sign In"}
+              {isLockedOut
+                ? `Locked (${formatTime(lockoutRemaining)})`
+                : loading
+                  ? "Signing In..."
+                  : "Sign In"}
             </button>
           </form>
 
@@ -199,7 +381,8 @@ export default function SignInPage() {
           {/* Google Sign In */}
           <button
             onClick={handleGoogleSignIn}
-            className="w-full rounded-lg border border-input bg-background px-4 py-2 font-medium text-foreground transition-colors hover:bg-accent flex items-center justify-center gap-2"
+            disabled={isLockedOut}
+            className="w-full rounded-lg border border-input bg-background px-4 py-2 font-medium text-foreground transition-colors hover:bg-accent flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <svg className="size-5" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
