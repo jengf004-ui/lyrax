@@ -17,6 +17,12 @@ interface AttemptData {
   lockedUntil: number | null; // timestamp
 }
 
+interface AuthErrorLike {
+  code?: string;
+  message?: string;
+  status?: number;
+}
+
 function getAttemptData(): AttemptData {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
@@ -31,6 +37,21 @@ function setAttemptData(data: AttemptData) {
 
 function clearAttemptData() {
   sessionStorage.removeItem(STORAGE_KEY);
+}
+
+function normalizeAuthError(error: unknown): AuthErrorLike {
+  if (typeof error === "object" && error !== null) {
+    return error as AuthErrorLike;
+  }
+  return {};
+}
+
+function isInvalidCredentialError(error: AuthErrorLike) {
+  return error.code === "INVALID_EMAIL_OR_PASSWORD" || error.status === 401;
+}
+
+function isRateLimitError(error: AuthErrorLike) {
+  return error.status === 429 || error.code === "TOO_MANY_REQUESTS";
 }
 
 // ─── Component ──────────────────────────────────────────────
@@ -144,27 +165,51 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      const response = await signIn.email({ email, password });
+      const response = await signIn.email({
+        email,
+        password,
+        callbackURL: "/account",
+      });
 
       if (response.error) {
-        recordFailedAttempt();
+        const authError = normalizeAuthError(response.error);
 
-        const remaining = MAX_ATTEMPTS - (failedAttempts + 1);
-
-        if (remaining <= 0) {
-          setError(
-            `Too many failed attempts. Your account has been temporarily locked for ${LOCKOUT_DURATION_SEC} seconds.`
-          );
-        } else {
-          setError(
-            `Incorrect email or password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before temporary lockout.`
-          );
+        if (authError.code === "EMAIL_NOT_VERIFIED") {
+          clearAttempts();
+          router.push("/auth/verify-email");
+          return;
         }
+
+        if (isRateLimitError(authError)) {
+          setError("Too many requests. Please wait a moment and try again.");
+          return;
+        }
+
+        if (isInvalidCredentialError(authError)) {
+          recordFailedAttempt();
+
+          const remaining = MAX_ATTEMPTS - (failedAttempts + 1);
+
+          if (remaining <= 0) {
+            setError(
+              `Too many failed attempts. Your account has been temporarily locked for ${LOCKOUT_DURATION_SEC} seconds.`
+            );
+          } else {
+            setError(
+              `Incorrect email or password. ${remaining} attempt${remaining === 1 ? "" : "s"} remaining before temporary lockout.`
+            );
+          }
+          return;
+        }
+
+        setError(authError.message || "Failed to sign in. Please try again.");
       } else {
         clearAttempts();
 
         // Check if email is verified before redirecting
-        const sessionRes = await fetch("/api/auth/get-session");
+        const sessionRes = await fetch("/api/auth/get-session", {
+          cache: "no-store",
+        });
         const sessionData = await sessionRes.json().catch(() => null);
 
         if (sessionData?.user && !sessionData.user.emailVerified) {
@@ -174,7 +219,6 @@ export default function SignInPage() {
         }
       }
     } catch (err: unknown) {
-      recordFailedAttempt();
       setError(
         err instanceof Error ? err.message : "Failed to sign in. Please try again."
       );

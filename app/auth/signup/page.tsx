@@ -59,7 +59,7 @@ export default function SignUpPage() {
         email,
         password,
         name,
-        callbackURL: "/auth/signin?verified=true",
+        callbackURL: "/account",
       });
 
       if (response.error) {

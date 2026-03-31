@@ -9,24 +9,37 @@ const AUTH_ROUTES = ["/auth/signin", "/auth/signup"];
 
 const VERIFY_EMAIL_ROUTE = "/auth/verify-email";
 
+type SessionLookupResult =
+  | { kind: "valid"; session: { user: { emailVerified: boolean } } }
+  | { kind: "missing" }
+  | { kind: "error"; status?: number };
+
 // ─── Helper: fetch session from Better Auth API ─────────────
-async function getSession(request: NextRequest) {
+async function getSession(request: NextRequest): Promise<SessionLookupResult> {
   try {
     const response = await fetch(
       new URL("/api/auth/get-session", request.url),
       {
+        cache: "no-store",
         headers: {
+          accept: "application/json",
           cookie: request.headers.get("cookie") || "",
         },
       }
     );
 
-    if (!response.ok) return null;
+    if (response.status === 401) {
+      return { kind: "missing" };
+    }
+
+    if (!response.ok) {
+      return { kind: "error", status: response.status };
+    }
 
     const data = await response.json();
-    return data?.user ? data : null;
+    return data?.user ? { kind: "valid", session: data } : { kind: "missing" };
   } catch {
-    return null;
+    return { kind: "error" };
   }
 }
 
@@ -56,10 +69,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── 2. Has session cookie — always fetch session ──────────
-  const session = await getSession(request);
+  const sessionResult = await getSession(request);
+
+  if (sessionResult.kind === "error") {
+    return NextResponse.next();
+  }
 
   // Cookie present but session is invalid / expired
-  if (!session) {
+  if (sessionResult.kind === "missing") {
     if (isProtected || isVerifyEmail) {
       const response = NextResponse.redirect(
         new URL("/auth/signin", request.url)
@@ -75,7 +92,7 @@ export async function middleware(request: NextRequest) {
 
   // ── Valid session below this point ─────────────────────────
 
-  const emailVerified = session.user.emailVerified;
+  const emailVerified = sessionResult.session.user.emailVerified;
 
   // Already verified but visiting verify-email → send to account
   if (isVerifyEmail && emailVerified) {

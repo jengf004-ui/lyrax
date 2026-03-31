@@ -71,7 +71,7 @@ export default function VerifyEmailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: session?.user?.email,
-          callbackURL: "/auth/signin?verified=true",
+          callbackURL: "/account",
         }),
       });
       if (res.ok) setResent(true);
